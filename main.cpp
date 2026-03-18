@@ -5,6 +5,7 @@
 #include "openfhe.h"
 #include <iostream>
 #include <ctime>
+#include <fstream>
 
 #include "utils.cpp"
 #include "include/client.h"
