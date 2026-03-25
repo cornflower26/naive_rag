@@ -103,34 +103,34 @@ int main(int argc, char *argv[]) {
 
     std::vector<std::vector<float>> embedding_database = faissIndexToVectors(index);
 
-    // plaintext approach- 
-    float square_query_embedding = square(query_embedding);
+    // // plaintext approach- 
+    // float square_query_embedding = square(query_embedding);
 
-    size_t db_size = embedding_database.size();
-    std::vector<float> square_embedding_database(db_size);
-    for (size_t i = 0; i < db_size; i++){
-        square_embedding_database[i] = square(embedding_database[i]);
-    }
+    // size_t db_size = embedding_database.size();
+    // std::vector<float> square_embedding_database(db_size);
+    // for (size_t i = 0; i < db_size; i++){
+    //     square_embedding_database[i] = square(embedding_database[i]);
+    // }
 
-    //Calculate similarity
-    std::vector<float> distances(db_size);
-    for (size_t i = 0; i < db_size; i++){
-        distances[i] = euclideanDistance(
-                query_embedding,embedding_database[i],
-                square_query_embedding,square_embedding_database[i]);
-    }
-    cout << distances << endl;
+    // //Calculate similarity
+    // std::vector<float> distances(db_size);
+    // for (size_t i = 0; i < db_size; i++){
+    //     distances[i] = euclideanDistance(
+    //             query_embedding,embedding_database[i],
+    //             square_query_embedding,square_embedding_database[i]);
+    // }
+    // cout << distances << endl;
 
-    {
-        std::ofstream out("plaintext_distances.txt");
-        if (!out.is_open()) {
-            std::cerr << "Could not open\n";
-        } else {
-            for (size_t i = 0; i < distances.size(); i++) {
-                out << i << "," << distances[i]<< "\n";
-            }
-        }
-    }
+    // {
+    //     std::ofstream out("plaintext_distances.txt");
+    //     if (!out.is_open()) {
+    //         std::cerr << "Could not open\n";
+    //     } else {
+    //         for (size_t i = 0; i < distances.size(); i++) {
+    //             out << i << "," << distances[i]<< "\n";
+    //         }
+    //     }
+    // }
 
 
     //ENCRYPTED APPROACH- 
@@ -169,6 +169,9 @@ int main(int argc, char *argv[]) {
     // plaintext vector of -2 
     Plaintext ptMinusTwo = cc->MakeCKKSPackedPlaintext(std::vector<double>(batchSize, -2.0));
 
+    // Keep encrypted distances so we can threshold in HE.
+    std::vector<Ciphertext<DCRTPoly>> ctDistances(db_size);
+
     for (size_t i = 0; i < db_size; i++) {
 
         // printing progress for testing
@@ -196,7 +199,9 @@ int main(int argc, char *argv[]) {
         Ciphertext<DCRTPoly> ctDist = cc->EvalAdd(ctMinus2Inner, ctE2);
         ctDist = cc->EvalAdd(ctDist, ptD2);
 
-        // decrypt distance
+        ctDistances[i] = ctDist;
+
+        // decrypt distance (debug / baseline)
         Plaintext ptDist;
         cc->Decrypt(sk, ctDist, &ptDist);
         ptDist->SetLength(1);
@@ -217,14 +222,49 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    threshold(distances, 0.61);
-    cout << distances << endl;
+    // thresholding using chebyshev compare function 
+    // `chebyshevCompare(cc, ctxt, delta, depth)` approximates:
+    //   step(x - delta) in the domain x ∈ [-1, 1],
+    // returning ~0 when x < delta and ~2 when x >= delta.
+    
+
+    //build a normalized margin so that we can use the function in the range [-1, 1]
+    const double T = 0.61;
+    const double DIST_MAX = 4.0; // I'm not sure what the actual max distance is
+
+    std::vector<Ciphertext<DCRTPoly>> distanceThresholds(db_size);
+    for (size_t i = 0; i < db_size; i++) {
+        // want to test if the distance is less than T 
+        // margin = (T - dist) / DIST_MAX
+        // now we can test if the margin is greater than 0
+        Ciphertext<DCRTPoly> ctMargin = cc->EvalMult(ctDistances[i], -1.0 / DIST_MAX); // -(dist/DIST_MAX)
+        cc->EvalAddInPlace(ctMargin, T / DIST_MAX);     // since chebyshevCompare is set up on [-1. 1]                                 // +(T/DIST_MAX)
+
+        // step ≈ 0 if margin < 0, else ≈ 2
+        Ciphertext<DCRTPoly> ctStep = OpenFHEWrapper::chebyshevCompare(cc, ctMargin, 0.0, COMP_DEPTH);
+
+        // change to 0 or 1 rather than 0 or 2
+        distanceThresholds[i] = cc->EvalMult(ctStep, 0.5);
+    }
+
+    // decrypt the thresholds to read them to check results
+    std::vector<float> distanceThresholdsPT(db_size);
+    for (size_t i = 0; i < db_size; i++) {
+        Plaintext ptInd;
+        cc->Decrypt(sk, distanceThresholds[i], &ptInd); // decrypt
+        ptInd->SetLength(1); // get the first value 
+
+        const auto vals = ptInd->GetRealPackedValue(); // get the values from the plaintext
+        const double v = vals.empty() ? 0.0 : vals[0]; // error checking 
+        distanceThresholdsPT[i] = static_cast<float>(v > 0.5 ? 1.0 : 0.0);
+    }
+    cout << distanceThresholdsPT << endl;
 
     //Multiply by database
     vector<float> solutions;
     vector<string> result(db_size);
     for (size_t i = 0; i < db_size; i++){
-        if (distances[i] == 1){
+        if (distanceThresholdsPT[i] == 1){
             result[i] = database[i];
             solutions.push_back(i);
         }
