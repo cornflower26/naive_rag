@@ -81,12 +81,12 @@ clean: CMakeFiles/naive_rag.dir/clean
 CMakeFiles/naive_rag.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/naive_rag.dir/build.make CMakeFiles/naive_rag.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/naive_rag.dir/build.make CMakeFiles/naive_rag.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles --progress-num=1,2,3,4,5,6 "Built target naive_rag"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles --progress-num=1,2,3,4,5,6,7 "Built target naive_rag"
 .PHONY : CMakeFiles/naive_rag.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/naive_rag.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles 6
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles 7
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/naive_rag.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles 0
 .PHONY : CMakeFiles/naive_rag.dir/rule

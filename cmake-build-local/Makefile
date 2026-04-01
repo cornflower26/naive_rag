@@ -177,6 +177,30 @@ src/client.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/naive_rag.dir/build.make CMakeFiles/naive_rag.dir/src/client.cpp.s
 .PHONY : src/client.cpp.s
 
+src/openFHE_wrapper.o: src/openFHE_wrapper.cpp.o
+.PHONY : src/openFHE_wrapper.o
+
+# target to build an object file
+src/openFHE_wrapper.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/naive_rag.dir/build.make CMakeFiles/naive_rag.dir/src/openFHE_wrapper.cpp.o
+.PHONY : src/openFHE_wrapper.cpp.o
+
+src/openFHE_wrapper.i: src/openFHE_wrapper.cpp.i
+.PHONY : src/openFHE_wrapper.i
+
+# target to preprocess a source file
+src/openFHE_wrapper.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/naive_rag.dir/build.make CMakeFiles/naive_rag.dir/src/openFHE_wrapper.cpp.i
+.PHONY : src/openFHE_wrapper.cpp.i
+
+src/openFHE_wrapper.s: src/openFHE_wrapper.cpp.s
+.PHONY : src/openFHE_wrapper.s
+
+# target to generate assembly for a file
+src/openFHE_wrapper.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/naive_rag.dir/build.make CMakeFiles/naive_rag.dir/src/openFHE_wrapper.cpp.s
+.PHONY : src/openFHE_wrapper.cpp.s
+
 src/server.o: src/server.cpp.o
 .PHONY : src/server.o
 
@@ -264,6 +288,9 @@ help:
 	@echo "... src/client.o"
 	@echo "... src/client.i"
 	@echo "... src/client.s"
+	@echo "... src/openFHE_wrapper.o"
+	@echo "... src/openFHE_wrapper.i"
+	@echo "... src/openFHE_wrapper.s"
 	@echo "... src/server.o"
 	@echo "... src/server.i"
 	@echo "... src/server.s"

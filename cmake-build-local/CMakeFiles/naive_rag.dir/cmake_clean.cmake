@@ -3,6 +3,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/naive_rag.dir/main.cpp.o.d"
   "CMakeFiles/naive_rag.dir/src/client.cpp.o"
   "CMakeFiles/naive_rag.dir/src/client.cpp.o.d"
+  "CMakeFiles/naive_rag.dir/src/openFHE_wrapper.cpp.o"
+  "CMakeFiles/naive_rag.dir/src/openFHE_wrapper.cpp.o.d"
   "CMakeFiles/naive_rag.dir/src/server.cpp.o"
   "CMakeFiles/naive_rag.dir/src/server.cpp.o.d"
   "CMakeFiles/naive_rag.dir/src/vector_utils.cpp.o"

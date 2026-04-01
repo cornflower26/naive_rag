@@ -51,6 +51,7 @@ add_executable(naive_rag main.cpp
         src/client.cpp
         src/server.cpp
         src/vector_utils.cpp
+        src/openFHE_wrapper.cpp
         utils.cpp)
 
 target_link_libraries(naive_rag PRIVATE faiss)
