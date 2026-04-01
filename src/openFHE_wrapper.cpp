@@ -34,9 +34,13 @@ size_t OpenFHEWrapper::computeRequiredDepth(size_t approach) {
       depth += COMP_DEPTH;  // mults required for threshold comparison
       break;
 
-    case 5: // novel diagonal linear transform
-      depth += 1;           // one mult required for score computation
-      depth += COMP_DEPTH;  // mults required for threshold comparison
+    case 5: // naive packed inner product + Chebyshev threshold (main.cpp path)
+      // CKKS uses the modulus chain for relin/rescale, not only a raw mult count: distance ops plus one
+      // mult for the margin, then chebyshevCompare (high-degree EvalChebyshevFunction + EvalPoly F4).
+      // If encrypted distance hits GetLevel()==0 before compare, Chebyshev returns garbage (~0), not 0/1 bits.
+      depth += 14;         // distance pipeline + margin EvalMult + chain headroom
+      depth += COMP_DEPTH; // must match signDepth passed to chebyshevCompare
+      depth += 8;          // extra primes for internal polynomial rescales / noise
       break;
   }
 

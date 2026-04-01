@@ -1,11 +1,13 @@
-// General functionality header files
 #include "include/config.h"
 #include "include/vector_utils.h"
 #include "include/openFHE_wrapper.h"
 #include "openfhe.h"
-#include <iostream>
-#include <ctime>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
+#include <iostream>
+#include <numeric>
+#include <stdexcept>
 
 #include "utils.cpp"
 #include "include/client.h"
@@ -14,6 +16,20 @@
 using namespace lbcrypto;
 using namespace std;
 using namespace VectorUtils;
+
+
+namespace {
+
+// function to check the vector length isn't longer than the batch size
+// then pad it with 0s since our embeddings are shorter
+void padPackedSlots(std::vector<double> &v, size_t batchSize) {
+    if (v.size() > batchSize) {
+        throw std::runtime_error("padPackedSlots: vector longer than CKKS batch size");
+    }
+    v.resize(batchSize, 0.0);
+}
+
+} // namespace
 
 // new
 // TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
@@ -32,12 +48,34 @@ int main(int argc, char *argv[]) {
     std::cout << "Embedding file: " << embedding_file << std::endl;
     std::cout << "Faiss file: " << faiss_file << std::endl;
     std::cout << "Database file: " << database_file << std::endl;
-    
+
+    // Query
+    std::vector<float> query_embedding = readFloatsFromFile(embedding_file);
+    std::vector<std::string> database = readStringsFromFile(database_file);
+    faiss::Index *index = readFaissIndex(faiss_file);
+    std::vector<std::vector<float>> embedding_database = faissIndexToVectors(index);
+
+    std::cout << "Index loaded successfully!" << std::endl;
+    std::cout << "Number of vectors: " << index->ntotal << std::endl;
+    std::cout << "Dimension: " << index->d << std::endl;
+    std::cout << "Is trained: " << (index->is_trained ? "yes" : "no") << std::endl;
+
+    const size_t dim = query_embedding.size();
+    if (dim != static_cast<size_t>(index->d)) {
+        std::cerr << "Error: query embedding length (" << dim << ") != index dimension (" << index->d << ")\n";
+        return 1;
+    }
+    for (size_t i = 0; i < embedding_database.size(); ++i) {
+        if (embedding_database[i].size() != dim) {
+            std::cerr << "Error: database vector " << i << " has length " << embedding_database[i].size()
+                      << ", expected " << dim << "\n";
+            return 1;
+        }
+    }
 
     //Setup Client and Server
     size_t multDepth = OpenFHEWrapper::computeRequiredDepth(5);
 
-    // Declare CKKS scheme elements
     CryptoContext<DCRTPoly> cc;
     cc->ClearEvalMultKeys();
     cc->ClearEvalAutomorphismKeys();
@@ -59,6 +97,11 @@ int main(int argc, char *argv[]) {
     cc->Enable(ADVANCEDSHE);
 
     batchSize = cc->GetEncodingParams()->GetBatchSize();
+    // batch size error check 
+    if (dim > batchSize) {
+        std::cerr << "Error: embedding dimension " << dim << " exceeds CKKS batch size " << batchSize << "\n";
+        return 1;
+    }
 
     cout << "Generating key pair... " << endl;
     auto keyPair = cc->KeyGen();
@@ -87,89 +130,70 @@ int main(int argc, char *argv[]) {
 
     cout << "CKKS scheme set up (depth = " << multDepth << ", batch size = " << batchSize << ")" << endl;
 
-    Client *client = new Client(cc, pk, sk, 528);
-    Server *server = new Server(cc, pk, 528);
-    
+    // Set up database size - 100 for texting 
+    const size_t kMaxDbVectors = 100;
+    const size_t db_size = (kMaxDbVectors == 0) ? embedding_database.size()
+                                                : std::min(kMaxDbVectors, embedding_database.size());
 
-    //Query
-    std::vector<float> query_embedding = readFloatsFromFile(embedding_file);
-    std::vector<std::string> database = readStringsFromFile(database_file);
-    faiss::Index* index = readFaissIndex(faiss_file);
-
-    std::cout << "Index loaded successfully!" << std::endl;
-    std::cout << "Number of vectors: " << index->ntotal << std::endl;
-    std::cout << "Dimension: " << index->d << std::endl;
-    std::cout << "Is trained: " << (index->is_trained ? "yes" : "no") << std::endl;
-
-    std::vector<std::vector<float>> embedding_database = faissIndexToVectors(index);
-
-    // // plaintext approach- 
-    // float square_query_embedding = square(query_embedding);
-
-    // size_t db_size = embedding_database.size();
-    // std::vector<float> square_embedding_database(db_size);
-    // for (size_t i = 0; i < db_size; i++){
-    //     square_embedding_database[i] = square(embedding_database[i]);
-    // }
-
-    // //Calculate similarity
-    // std::vector<float> distances(db_size);
-    // for (size_t i = 0; i < db_size; i++){
-    //     distances[i] = euclideanDistance(
-    //             query_embedding,embedding_database[i],
-    //             square_query_embedding,square_embedding_database[i]);
-    // }
-    // cout << distances << endl;
-
-    // {
-    //     std::ofstream out("plaintext_distances.txt");
-    //     if (!out.is_open()) {
-    //         std::cerr << "Could not open\n";
-    //     } else {
-    //         for (size_t i = 0; i < distances.size(); i++) {
-    //             out << i << "," << distances[i]<< "\n";
-    //         }
-    //     }
-    // }
-
-
-    //ENCRYPTED APPROACH- 
-
-    // precompute e^2 in plaintext then encrypt it
-    std::vector<double> query_embedding_d(query_embedding.begin(), query_embedding.end());
-
-    std::vector<double> e_sq_vec(query_embedding.size());   //new vector to store squares
-    for (size_t j = 0; j < query_embedding.size(); j++) {
-        const double v = static_cast<double>(query_embedding[j]);
-        e_sq_vec[j] = v * v;
-    }
-
-    // encrypt query embedding and squared embedding
-    Plaintext ptE = cc->MakeCKKSPackedPlaintext(query_embedding_d);
-    Ciphertext<DCRTPoly> ctE = cc->Encrypt(pk, ptE);
-
-    Plaintext ptESq = cc->MakeCKKSPackedPlaintext(e_sq_vec);
-    Ciphertext<DCRTPoly> ctESq = cc->Encrypt(pk, ptESq);
-
-    // compute encrypted ||e||^2 by summing slots of e^2
-    Ciphertext<DCRTPoly> ctE2 = OpenFHEWrapper::sumAllSlots(cc, ctESq);
-
-    //size_t db_size = embedding_database.size(); 
-    // TESTING
-    size_t db_size = std::min<size_t>(100, embedding_database.size());
-    
-    
-    std::vector<float> square_embedding_database(db_size);  //new vector to store squares of database
-    for (size_t i = 0; i < db_size; i++){
+    /// PLAINTEXT APPROACH
+    const float square_query_embedding = square(query_embedding);
+    std::vector<float> square_embedding_database(db_size);
+    for (size_t i = 0; i < db_size; i++) {
         square_embedding_database[i] = square(embedding_database[i]);
     }
 
-    //Calculate similarity
-    std::vector<float> distances(db_size);
-    // plaintext vector of -2 
-    Plaintext ptMinusTwo = cc->MakeCKKSPackedPlaintext(std::vector<double>(batchSize, -2.0));
+    std::vector<float> plaintext_distances(db_size);
+    for (size_t i = 0; i < db_size; i++) {
+        plaintext_distances[i] = euclideanDistance(
+            query_embedding, embedding_database[i], square_query_embedding, square_embedding_database[i]);
+    }
 
-    // Keep encrypted distances so we can threshold in HE.
+    // add to file 
+    {
+        std::ofstream out("plaintext_distances.txt");
+        if (!out.is_open()) {
+            std::cerr << "Could not open plaintext_distances.txt\n";
+            return 1;
+        }
+        for (size_t i = 0; i < plaintext_distances.size(); i++) {
+            out << i << "," << plaintext_distances[i] << "\n";
+        }
+    }
+
+    // plaintext thresholding
+    const double kSqDistanceThreshold = 0.61;
+    std::vector<float> plaintext_threshold_bits(db_size);
+    for (size_t i = 0; i < db_size; i++) {
+        plaintext_threshold_bits[i] =
+            static_cast<double>(plaintext_distances[i]) < kSqDistanceThreshold ? 1.0f : 0.0f;
+    }
+    // add to file 
+    {
+        std::ofstream out("plaintext_thresholds.txt");
+        if (!out.is_open()) {
+            std::cerr << "Could not open plaintext_thresholds.txt\n";
+            return 1;
+        }
+        for (size_t i = 0; i < plaintext_threshold_bits.size(); i++) {
+            out << i << "," << static_cast<int>(plaintext_threshold_bits[i]) << "\n";
+        }
+    }
+
+
+    // ENCRYPTED APPROACH
+    std::vector<double> query_embedding_d(query_embedding.begin(), query_embedding.end());
+    padPackedSlots(query_embedding_d, batchSize);
+    // Encrypt query embedding
+    Plaintext ptE = cc->MakeCKKSPackedPlaintext(query_embedding_d);
+    Ciphertext<DCRTPoly> ctE = cc->Encrypt(pk, ptE);
+
+    // Encrypt query embedding squared
+    const double e2_plain = static_cast<double>(square_query_embedding);
+    Plaintext ptE2Slots = cc->MakeCKKSPackedPlaintext(std::vector<double>(batchSize, e2_plain));
+
+    // Encrypt -2 vector 
+    std::vector<float> distances(db_size);
+    Plaintext ptMinusTwo = cc->MakeCKKSPackedPlaintext(std::vector<double>(batchSize, -2.0));
     std::vector<Ciphertext<DCRTPoly>> ctDistances(db_size);
 
     for (size_t i = 0; i < db_size; i++) {
@@ -181,6 +205,7 @@ int main(int argc, char *argv[]) {
         
         // encode database vectors in plaintext
         std::vector<double> d_vec_d(embedding_database[i].begin(), embedding_database[i].end());
+        padPackedSlots(d_vec_d, batchSize);
         Plaintext ptD = cc->MakeCKKSPackedPlaintext(d_vec_d);
 
         // encrypted inner product <e, d>- componentwise multiply
@@ -196,41 +221,34 @@ int main(int argc, char *argv[]) {
         Plaintext ptD2 = cc->MakeCKKSPackedPlaintext(std::vector<double>(batchSize, d2));
 
         // Distance^2 = ||d||^2 + ||e||^2 - 2<e,d>
-        Ciphertext<DCRTPoly> ctDist = cc->EvalAdd(ctMinus2Inner, ctE2);
-        ctDist = cc->EvalAdd(ctDist, ptD2);
-
+        Ciphertext<DCRTPoly> ctDist = cc->EvalAdd(ctMinus2Inner, ptD2);
+        ctDist = cc->EvalAdd(ctDist, ptE2Slots);
         ctDistances[i] = ctDist;
 
-        // decrypt distance (debug / baseline)
+        // decrypt distance^2
         Plaintext ptDist;
         cc->Decrypt(sk, ctDist, &ptDist);
         ptDist->SetLength(1);
         const auto vals = ptDist->GetRealPackedValue();
-        distances[i] = static_cast<float>(vals.empty() ? 0.0 : vals[0]);
+        const double raw = vals.empty() ? 0.0 : static_cast<double>(vals[0]);
+        distances[i] = static_cast<float>(std::max(0.0, raw));
     }
-    cout << distances << endl;
 
-    // save distances to a file before thresholding
+    // add to file 
     {
         std::ofstream out("distances.txt");
         if (!out.is_open()) {
-            std::cerr << "Could not open distances.txt for writing" << std::endl;
-        } else {
-            for (size_t i = 0; i < distances.size(); i++) {
-                out << distances[i] << "\n";
-            }
+            std::cerr << "Could not open distances.txt\n";
+            return 1;
+        }
+        for (size_t i = 0; i < distances.size(); i++) {
+            out << distances[i] << "\n";
         }
     }
 
-    // thresholding using chebyshev compare function 
-    // `chebyshevCompare(cc, ctxt, delta, depth)` approximates:
-    //   step(x - delta) in the domain x ∈ [-1, 1],
-    // returning ~0 when x < delta and ~2 when x >= delta.
-    
-
-    //build a normalized margin so that we can use the function in the range [-1, 1]
-    const double T = 0.61;
-    const double DIST_MAX = 4.0; // I'm not sure what the actual max distance is
+    // Chebyshev thresholding
+    const double T = kSqDistanceThreshold;
+    const double DIST_MAX = 4.0;
 
     std::vector<Ciphertext<DCRTPoly>> distanceThresholds(db_size);
     for (size_t i = 0; i < db_size; i++) {
@@ -247,51 +265,48 @@ int main(int argc, char *argv[]) {
         distanceThresholds[i] = cc->EvalMult(ctStep, 0.5);
     }
 
-    // decrypt the thresholds to read them to check results
+    // decrypt the thresholds to read them to check results (soft value ≈ 0 or ≈ 1 before hard cut)
     std::vector<float> distanceThresholdsPT(db_size);
     for (size_t i = 0; i < db_size; i++) {
         Plaintext ptInd;
-        cc->Decrypt(sk, distanceThresholds[i], &ptInd); // decrypt
-        ptInd->SetLength(1); // get the first value 
+        cc->Decrypt(sk, distanceThresholds[i], &ptInd);
+        ptInd->SetLength(1);
 
-        const auto vals = ptInd->GetRealPackedValue(); // get the values from the plaintext
-        const double v = vals.empty() ? 0.0 : vals[0]; // error checking 
+        const auto vals = ptInd->GetRealPackedValue();
+        const double v = vals.empty() ? 0.0 : vals[0];
         distanceThresholdsPT[i] = static_cast<float>(v > 0.5 ? 1.0 : 0.0);
     }
-    cout << distanceThresholdsPT << endl;
 
-    //Multiply by database
-    vector<float> solutions;
-    vector<string> result(db_size);
-    for (size_t i = 0; i < db_size; i++){
-        if (distanceThresholdsPT[i] == 1){
+    std::vector<std::string> result(db_size);
+    std::vector<size_t> solutions;
+    for (size_t i = 0; i < db_size; i++) {
+        if (distanceThresholdsPT[i] == 1.0f && i < database.size()) {
             result[i] = database[i];
             solutions.push_back(i);
-        }
-        else{
+        } else {
             result[i] = "0";
         }
     }
 
-    //Decode result
-    cout << "Number of solutions " << solutions.size() << " : " << solutions << endl;
-    cout << result << endl;
+    std::cout << "Number of solutions " << solutions.size() << "\n";
+    for (size_t id : solutions) {
+        std::cout << "  id " << id << "\n";
+    }
+    for (const std::string &row : result) {
+        std::cout << row << "\n";
+    }
 
-    //Baseline
-    int k = 10;  // number of nearest neighbors
-    std::vector<float> query(index->d);  // query vector
-    // Fill query vector with your data...
-
+    const int k = 10;
+    std::vector<float> faiss_query(query_embedding.begin(), query_embedding.end());
     std::vector<float> top_distances(k);
     std::vector<faiss::idx_t> labels(k);
+    index->search(1, faiss_query.data(), k, top_distances.data(), labels.data());
 
-    index->search(1, query.data(), k, top_distances.data(), labels.data());
-
-    std::cout << "\nTop " << k << " nearest neighbors:" << std::endl;
+    std::cout << "\nTop " << k << " nearest neighbors:\n";
     for (int i = 0; i < k; ++i) {
-        std::cout << "  ID: " << labels[i] << " " << database[labels[i]] << std::endl;
-        // Distance: " << distances[i] << std::endl;
-
+        if (labels[i] >= 0 && static_cast<size_t>(labels[i]) < database.size()) {
+            std::cout << "  ID: " << labels[i] << " " << database[labels[i]] << std::endl;
+        }
     }
 
     return 0;
@@ -301,3 +316,4 @@ int main(int argc, char *argv[]) {
 // href="https://www.jetbrains.com/help/clion/">jetbrains.com/help/clion/</a>.
 //  Also, you can try interactive lessons for CLion by selecting
 //  'Help | Learn IDE Features' from the main menu.
+
