@@ -59,6 +59,7 @@ protected:
     string query;
     vector<float> embeddedQuery;
     vector<string> queryResult;
+    vector<Ciphertext<DCRTPoly>> encryptedResult;
 
     CryptoContext<DCRTPoly> cc;
     PublicKey<DCRTPoly> pk;

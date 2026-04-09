@@ -31,6 +31,7 @@ class Server {
 public:
     // constructor
     Server(CryptoContext<DCRTPoly> ccParam, PublicKey<DCRTPoly> pkParam, size_t vectorParam);
+    bool loadAndEncryptBinaryDatabase(const vector<vector<int>>& binaryStrings);
 
     // destructor
     ~Server() = default;
@@ -51,6 +52,8 @@ public:
     // 5. Format and Return Query Result
     bool saveResult();
 
+    vector<Ciphertext<DCRTPoly>> getQueryResult();
+
 
 protected:
     // protected members (accessible by derived classes)
@@ -58,6 +61,7 @@ protected:
     PublicKey<DCRTPoly> pk;
     Ciphertext<DCRTPoly> queryCipher;
     Ciphertext<DCRTPoly> squareCipher;
+    vector<Ciphertext<DCRTPoly>> queryResult;
 
     size_t k;
     vector<vector<Ciphertext<DCRTPoly>>> databaseCipher;

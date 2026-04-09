@@ -333,6 +333,69 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    Client *client = new Client(cc, pk, sk, VECTOR_DIM, "");
+    Server *server = new Server(cc, pk, VECTOR_DIM);
+
+    //cout << "\n Loading Database" << endl;
+    //std::vector<std::string> database = readStringsFromFile(database_file);
+    //cout << "Loaded " << database.size() << " database entries" << endl;
+
+    for (size_t i = 0; i < min(size_t(5), database.size()); i++) {
+        cout << "  [" << i << "] " << database[i] << endl;
+    }
+
+    // ===== PIR =====
+
+    vector<vector<int>> binaryDatabase;
+    for (const auto& entry : database) {
+        binaryDatabase.push_back(stringToBinaryVector(entry));
+    }
+    cout << "Converted " << binaryDatabase.size() << " entries to binary ("
+         << binaryDatabase[0].size() << " bits each)" << endl;
+
+    server->loadAndEncryptBinaryDatabase(binaryDatabase);
+
+
+    int targetIndex = 2;
+    if (targetIndex < database.size()) {
+        cout << "\nTesting PIR for index " << targetIndex << ": \"" << database[targetIndex] << "\"" << endl;
+
+        vector<double> oneHot(batchSize, 0.0);
+        oneHot[targetIndex] = 1.0;
+        Ciphertext<DCRTPoly> query = OpenFHEWrapper::encryptFromVector(cc, pk, oneHot);
+        server->setCiphertext(query);
+
+        if (server->databaseQuery()) {
+            server->saveResult();
+
+            auto encryptedResults = server->getQueryResult();
+
+            int bitsPerItem = binaryDatabase[0].size();
+            vector<int> retrievedBits;
+
+            for (int bitIdx = 0; bitIdx < bitsPerItem; bitIdx++) {
+                int resultIdx = targetIndex * bitsPerItem + bitIdx;
+                if (resultIdx < encryptedResults.size()) {
+                    auto dec = OpenFHEWrapper::decryptToVector(cc, sk, encryptedResults[resultIdx]);
+                    int bit = static_cast<int>(round(dec[0]));
+                    retrievedBits.push_back(bit);
+                }
+            }
+
+            string retrievedString = binaryVectorToString(retrievedBits);
+
+            cout << "  Expected: \"" << database[targetIndex] << "\"" << endl;
+            cout << "  Retrieved: \"" << retrievedString << "\"" << endl;
+
+            if (database[targetIndex] == retrievedString) {
+                cout << "PIR SUCCESSFUL!" << endl;
+            } else {
+                cout << "PIR FAILED!" << endl;
+            }
+        }
+    }
+
+
     return 0;
 }
 

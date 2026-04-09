@@ -1,3 +1,0 @@
-/home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles/naive_rag.dir
-/home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles/edit_cache.dir
-/home/hberens/openfhe/naive_rag/cmake-build-local/CMakeFiles/rebuild_cache.dir

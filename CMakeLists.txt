@@ -1,9 +1,19 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.28)
 project(naive_rag LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+#find_package(OpenMP QUIET)
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fopenmp -L/usr/local/Cellar/libomp/21.1.8/lib -I/usr/local/Cellar/libomp/21.1.8/include")
+set(CMAKE_OSX_ARCHITECTURES "x86_64")
+#set(CMAKE_CXX_COMPILER "clang++")
+
+if(APPLE)
+    set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I/usr/local/Cellar/libomp/21.1.8/include")
+    set(OpenMP_CXX_LIB_NAMES "omp")
+    set(OpenMP_omp_LIBRARY "/usr/local/Cellar/libomp/21.1.8/lib/libomp.dylib")
+endif()
 find_package(OpenMP QUIET)
 
 find_package(faiss CONFIG QUIET)
@@ -55,8 +65,12 @@ add_executable(naive_rag main.cpp
         utils.cpp)
 
 target_link_libraries(naive_rag PRIVATE faiss)
+
 if(OpenMP_CXX_FOUND)
     target_link_libraries(naive_rag PRIVATE OpenMP::OpenMP_CXX)
+    if(APPLE)
+        target_link_directories(naive_rag PRIVATE /usr/local/opt/libomp/lib)
+    endif()
 endif()
 
 add_library(openfhecorelib SHARED IMPORTED)

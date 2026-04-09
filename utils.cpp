@@ -4,10 +4,37 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <iostream>
+
 
 #include <faiss/IndexFlat.h>
 #include <faiss/index_io.h>
 using namespace std;
+
+//Helper to convert string to binary vector (ASCII)
+vector<int> stringToBinaryVector(const string& text) {
+    vector<int> bits;
+    for (char c : text)
+    {
+        for (int i = 7; i >= 0; i--) {
+            bits.push_back((c >> i) & 1);
+        }
+    }
+    return bits;
+}
+
+//Helper to convert binary vector to string
+string binaryVectorToString(const vector<int>& bits) {
+    string result;
+    for (size_t i = 0; i + 7 < bits.size(); i += 8) {
+        char c = 0;
+        for (int j = 0; j < 8; j++) {
+            c = (c << 1) | bits[i + j];
+        }
+        result += c;
+    }
+    return result;
+}
 
 static std::vector<float> readFloatsFromFile(const std::string& filename) {
     std::vector<float> result;
@@ -132,4 +159,55 @@ static std::vector<std::vector<float>> faissIndexToVectors(faiss::Index* index) 
     }
 
     return embeddings;
+}
+
+static vector<vector<int>> readBinaryStringCSV(const string& filename) {
+    vector<vector<int>> binaryData;
+    ifstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr << "Error: could not open file " << filename << endl;
+        return binaryData;
+    }
+
+    string line;
+    int lineNum = 0;
+    while (getline(file, line)) {
+        lineNum++;
+        if (line.empty()) continue;
+
+        size_t start = line.find_first_not_of(" \t\r\n");
+        size_t end = line.find_last_not_of(" \t\r\n");
+        if (start == string::npos) continue;
+        line = line.substr(start, end - start + 1);
+
+
+
+        vector<int> binaryVector;
+        for (char c : line) {
+            if (c == '0') {
+                binaryVector.push_back(0);
+            } else if (c == '1') {
+                binaryVector.push_back(1);
+            } else {
+                continue;
+            }
+        }
+
+        if (!binaryVector.empty()) {
+            binaryData.push_back(binaryVector);
+            if (binaryData.size() <= 5) {
+                cout << "  Line " << lineNum << ": " << line << " -> [";
+                for (size_t i = 0; i < min(size_t(10), binaryVector.size()); i++) {
+                    cout << binaryVector[i];
+                }
+                if (binaryVector.size() > 10) cout << "...";
+                cout << "] (" << binaryVector.size() << " bits)" << endl;
+            }
+        }
+    }
+
+    file.close();
+    cout << "loaded " << binaryData.size() << " binary strings from " << filename << endl;
+    return binaryData;
 }
