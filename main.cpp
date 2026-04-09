@@ -31,7 +31,6 @@ void padPackedSlots(std::vector<double> &v, size_t batchSize) {
 
 } // namespace
 
-// new
 // TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 int main(int argc, char *argv[]) {
@@ -131,7 +130,7 @@ int main(int argc, char *argv[]) {
     cout << "CKKS scheme set up (depth = " << multDepth << ", batch size = " << batchSize << ")" << endl;
 
     // Set up database size - 100 for texting 
-    const size_t kMaxDbVectors = 30;
+    const size_t kMaxDbVectors = 50;
     const size_t db_size = (kMaxDbVectors == 0) ? embedding_database.size()
                                                 : std::min(kMaxDbVectors, embedding_database.size());
 
@@ -248,7 +247,7 @@ int main(int argc, char *argv[]) {
 
     // Chebyshev thresholding
     const double T = kSqDistanceThreshold;
-    const double DIST_MAX = 4.0;
+    const double DIST_MAX = 1.0;
 
     std::vector<Ciphertext<DCRTPoly>> distanceThresholds(db_size);
     for (size_t i = 0; i < db_size; i++) {
@@ -276,6 +275,31 @@ int main(int argc, char *argv[]) {
         const double v = vals.empty() ? 0.0 : vals[0];
         distanceThresholdsPT[i] = static_cast<float>(v > 0.5 ? 1.0 : 0.0);
     }
+
+    // save encrypted thresholds to file
+    {
+        std::ofstream out("encrypted_thresholds.txt");
+        if (!out.is_open()) {
+            std::cerr << "Could not open encrypted_thresholds.txt\n";
+            return 1;
+        }
+        for (size_t i = 0; i < distanceThresholdsPT.size(); i++) {
+            out << i << "," << static_cast<int>(distanceThresholdsPT[i]) << "\n";
+        }
+    }
+
+    // Compare plaintext vs encrypted threshold bits
+    size_t threshold_matches = 0;
+    for (size_t i = 0; i < db_size; i++) {
+        if (plaintext_threshold_bits[i] == distanceThresholdsPT[i]) {
+            threshold_matches++;
+        }
+    }
+    const double threshold_accuracy = (db_size == 0)
+                                          ? 0.0
+                                          : 100.0 * static_cast<double>(threshold_matches) / static_cast<double>(db_size);
+    std::cout << "Threshold agreement: " << threshold_matches << " / " << db_size
+              << " (" << threshold_accuracy << "%)" << std::endl;
 
     std::vector<std::string> result(db_size);
     std::vector<size_t> solutions;
