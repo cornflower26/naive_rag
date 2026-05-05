@@ -31,6 +31,32 @@ void padPackedSlots(std::vector<double> &v, size_t batchSize) {
 
 } // namespace
 
+//helper functions for string and binary conversion
+vector<int> stringToBinaryVector(const string& text) {
+    vector<int> bits;
+    for (char c : text) {
+        for (int i = 7; i >= 0; i--) {
+            bits.push_back((c >> i) & 1);
+        }
+    }
+    return bits;
+}
+
+string binaryVectorToString(const vector<int>& bits) {
+    string result;
+    for (size_t i = 0; i + 7 < bits.size(); i += 8) {
+        char c = 0;
+        for (int j = 0; j < 8; j++) {
+            c = (c << 1) | bits[i + j];
+        }
+        result += c;
+    }
+    while (!result.empty() && result.back() == '\0') {
+        result.pop_back();
+    }
+    return result;
+}
+
 // TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 int main(int argc, char *argv[]) {
@@ -344,55 +370,51 @@ int main(int argc, char *argv[]) {
         cout << "  [" << i << "] " << database[i] << endl;
     }
 
-    // ===== PIR =====
+    // PIR 
 
+    // convert database strings to binary
     vector<vector<int>> binaryDatabase;
     for (const auto& entry : database) {
         binaryDatabase.push_back(stringToBinaryVector(entry));
     }
-    cout << "Converted " << binaryDatabase.size() << " entries to binary ("
-         << binaryDatabase[0].size() << " bits each)" << endl;
-
-    server->loadAndEncryptBinaryDatabase(binaryDatabase);
-
-
+    
+    int maxBits = 0;
+    for (const auto& item : binaryDatabase) {
+        maxBits = max(maxBits, (int)item.size());
+    }
+    for (auto& item : binaryDatabase) {
+        item.resize(maxBits, 0);
+    }
+    int bitsPerItem = maxBits;
+    
+    // load plaintext database once, reused for all queries
+    server->loadPlaintextDatabase(binaryDatabase);
+    
+    // precreate selectors for indices once
+    vector<Ciphertext<DCRTPoly>> allSelectors[database.size()];
+    for (size_t idx = 0; idx < database.size(); idx++) {
+        client->setQuery(to_string(idx));
+        // stores selector in encryptedQuery
+        client->sendClientEmbedding();
+        allSelectors[idx] = client->getEncryptedQuery();
+    }
+    
+    // Run PIR for a specific index (e.g., 2)
     int targetIndex = 2;
-    if (targetIndex < database.size()) {
-        cout << "\nTesting PIR for index " << targetIndex << ": \"" << database[targetIndex] << "\"" << endl;
+    if (targetIndex < (int)database.size())
+    {
+        // ciphertext x plaintext
+        auto encryptedResult = server->databaseQueryOptimized(allSelectors[targetIndex]);
 
-        vector<double> oneHot(batchSize, 0.0);
-        oneHot[targetIndex] = 1.0;
-        Ciphertext<DCRTPoly> query = OpenFHEWrapper::encryptFromVector(cc, pk, oneHot);
-        server->setCiphertext(query);
-
-        if (server->databaseQuery()) {
-            server->saveResult();
-
-            auto encryptedResults = server->getQueryResult();
-
-            int bitsPerItem = binaryDatabase[0].size();
-            vector<int> retrievedBits;
-
-            for (int bitIdx = 0; bitIdx < bitsPerItem; bitIdx++) {
-                int resultIdx = targetIndex * bitsPerItem + bitIdx;
-                if (resultIdx < encryptedResults.size()) {
-                    auto dec = OpenFHEWrapper::decryptToVector(cc, sk, encryptedResults[resultIdx]);
-                    int bit = static_cast<int>(round(dec[0]));
-                    retrievedBits.push_back(bit);
-                }
-            }
-
-            string retrievedString = binaryVectorToString(retrievedBits);
-
-            cout << "  Expected: \"" << database[targetIndex] << "\"" << endl;
-            cout << "  Retrieved: \"" << retrievedString << "\"" << endl;
-
-            if (database[targetIndex] == retrievedString) {
-                cout << "PIR SUCCESSFUL!" << endl;
-            } else {
-                cout << "PIR FAILED!" << endl;
-            }
+        vector<double> decrypted = OpenFHEWrapper::decryptToVector(cc, sk, encryptedResult);
+        vector<int> retrievedBits;
+        for (int i = 0; i < bitsPerItem; i++)
+        {
+            retrievedBits.push_back(abs(decrypted[i]) > 0.5 ? 1 : 0);
         }
+        string retrievedString = binaryVectorToString(retrievedBits);
+        
+        // The retrieved string is now in "retrievedString" for further use
     }
 
 

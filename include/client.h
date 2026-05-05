@@ -42,6 +42,8 @@ public:
     inline string returnQuery() {return query;};
     inline vector<string> returnQueryResult() {return queryResult;};
 
+    inline Ciphertext<DCRTPoly> getEncryptedQuery() { return encryptedQuery; }
+
     // 2. Compute Client embedding
     vector<float_t> embedQuery(std::string q);
 
@@ -65,6 +67,8 @@ protected:
     PublicKey<DCRTPoly> pk;
     PrivateKey<DCRTPoly> sk;
     size_t k;
+
+    Ciphertext<DCRTPoly> encryptedResult;
 
 };
 

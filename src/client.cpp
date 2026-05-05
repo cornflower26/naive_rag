@@ -39,7 +39,7 @@ bool Client::sendClientEmbedding() {
     size_t batchSize = cc->GetEncodingParams()->GetBatchSize();
     vector<double> oneHot(batchSize, 0.0);
     oneHot[index] = 1.0;
-    Ciphertext<DCRTPoly> encryptedQuery = OpenFHEWrapper::encryptFromVector(cc, pk, oneHot);
+    encryptedQuery = OpenFHEWrapper::encryptFromVector(cc, pk, oneHot);
 
     return true;
 
