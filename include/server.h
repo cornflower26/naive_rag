@@ -54,6 +54,10 @@ public:
 
     vector<Ciphertext<DCRTPoly>> getQueryResult();
 
+    void loadPlaintexDatabase(const vector<vector<int>>& binaryStrings);
+
+    Ciphertext<DCRTPoly> databaseQueryOptimized(const vector<Ciphertext<DCRTPoly>>& selectors):
+
 
 protected:
     // protected members (accessible by derived classes)
@@ -64,6 +68,8 @@ protected:
     vector<Ciphertext<DCRTPoly>> queryResult;
 
     size_t k;
+
+    vector<Plaintext> plaintextDatabase;
     vector<vector<Ciphertext<DCRTPoly>>> databaseCipher;
 };
 
